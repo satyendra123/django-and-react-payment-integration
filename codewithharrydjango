@@ -1,0 +1,506 @@
+Step-1 Checksum.py
+  # pip install pycryptodome
+import base64
+import string
+import random
+import hashlib
+
+from Crypto.Cipher import AES
+
+
+IV = "@@@@&&&&####$$$$"
+BLOCK_SIZE = 16
+
+
+def generate_checksum(param_dict, merchant_key, salt=None):
+    params_string = __get_param_string__(param_dict)
+    salt = salt if salt else __id_generator__(4)
+    final_string = '%s|%s' % (params_string, salt)
+
+    hasher = hashlib.sha256(final_string.encode())
+    hash_string = hasher.hexdigest()
+
+    hash_string += salt
+
+    return __encode__(hash_string, IV, merchant_key)
+
+def generate_refund_checksum(param_dict, merchant_key, salt=None):
+    for i in param_dict:
+        if("|" in param_dict[i]):
+            param_dict = {}
+            exit()
+    params_string = __get_param_string__(param_dict)
+    salt = salt if salt else __id_generator__(4)
+    final_string = '%s|%s' % (params_string, salt)
+
+    hasher = hashlib.sha256(final_string.encode())
+    hash_string = hasher.hexdigest()
+
+    hash_string += salt
+
+    return __encode__(hash_string, IV, merchant_key)
+
+
+def generate_checksum_by_str(param_str, merchant_key, salt=None):
+    params_string = param_str
+    salt = salt if salt else __id_generator__(4)
+    final_string = '%s|%s' % (params_string, salt)
+
+    hasher = hashlib.sha256(final_string.encode())
+    hash_string = hasher.hexdigest()
+
+    hash_string += salt
+
+    return __encode__(hash_string, IV, merchant_key)
+
+
+def verify_checksum(param_dict, merchant_key, checksum):
+    # Remove checksum
+    if 'CHECKSUMHASH' in param_dict:
+        param_dict.pop('CHECKSUMHASH')
+
+    # Get salt
+    paytm_hash = __decode__(checksum, IV, merchant_key)
+    salt = paytm_hash[-4:]
+    calculated_checksum = generate_checksum(param_dict, merchant_key, salt=salt)
+    return calculated_checksum == checksum
+
+def verify_checksum_by_str(param_str, merchant_key, checksum):
+    # Remove checksum
+    #if 'CHECKSUMHASH' in param_dict:
+        #param_dict.pop('CHECKSUMHASH')
+
+    # Get salt
+    paytm_hash = __decode__(checksum, IV, merchant_key)
+    salt = paytm_hash[-4:]
+    calculated_checksum = generate_checksum_by_str(param_str, merchant_key, salt=salt)
+    return calculated_checksum == checksum
+
+
+
+def __id_generator__(size=6, chars=string.ascii_uppercase + string.digits + string.ascii_lowercase):
+    return ''.join(random.choice(chars) for _ in range(size))
+
+
+def __get_param_string__(params):
+    params_string = []
+    for key in sorted(params.keys()):
+        if("REFUND" in params[key] or "|" in params[key]):
+            respons_dict = {}
+            exit()
+        value = params[key]
+        params_string.append('' if value == 'null' else str(value))
+    return '|'.join(params_string)
+
+
+__pad__ = lambda s: s + (BLOCK_SIZE - len(s) % BLOCK_SIZE) * chr(BLOCK_SIZE - len(s) % BLOCK_SIZE)
+__unpad__ = lambda s: s[0:-ord(s[-1])]
+
+
+def __encode__(to_encode, iv, key):
+    # Pad
+    to_encode = __pad__(to_encode)
+    # Encrypt
+    c = AES.new(key.encode('utf-8'), AES.MODE_CBC, iv.encode('utf-8'))
+    to_encode = c.encrypt(to_encode.encode('utf-8'))
+    # Encode
+    to_encode = base64.b64encode(to_encode)
+    return to_encode.decode("UTF-8")
+
+
+def __decode__(to_decode, iv, key):
+    # Decode
+    to_decode = base64.b64decode(to_decode)
+    # Decrypt
+    c = AES.new(key.encode('utf-8'), AES.MODE_CBC, iv.encode('utf-8'))
+    to_decode = c.decrypt(to_decode)
+    if type(to_decode) == bytes:
+        # convert bytes array to str.
+        to_decode = to_decode.decode()
+    # remove pad
+    return __unpad__(to_decode)
+
+
+if __name__ == "__main__":
+    params = {
+        "MID": "mid",
+        "ORDER_ID": "order_id",
+        "CUST_ID": "cust_id",
+        "TXN_AMOUNT": "1",
+        "CHANNEL_ID": "WEB",
+        "INDUSTRY_TYPE_ID": "Retail",
+        "WEBSITE": "xxxxxxxxxxx"
+    }
+
+    print(verify_checksum(
+        params, 'xxxxxxxxxxxxxxxx',
+        "CD5ndX8VVjlzjWbbYoAtKQIlvtXPypQYOg0Fi2AUYKXZA5XSHiRF0FDj7vQu66S8MHx9NaDZ/uYm3WBOWHf+sDQAmTyxqUipA7i1nILlxrk="))
+
+    # print(generate_checksum(params, "xxxxxxxxxxxxxxxx"))
+
+#Step-2 models.py
+from django.db import models
+
+# Create your models here.
+from django.db import models
+
+# Create your models here.
+class Product(models.Model):
+    product_id = models.AutoField
+    product_name = models.CharField(max_length=50)
+    category = models.CharField(max_length=50, default="")
+    subcategory = models.CharField(max_length=50, default="")
+    price = models.IntegerField(default=0)
+    desc = models.CharField(max_length=300)
+    pub_date = models.DateField()
+    image = models.ImageField(upload_to='shop/images', default="")
+
+    def __str__(self):
+        return self.product_name
+
+
+class Contact(models.Model):
+    msg_id = models.AutoField(primary_key=True)
+    name = models.CharField(max_length=50)
+    email = models.CharField(max_length=70, default="")
+    phone = models.CharField(max_length=70, default="")
+    desc = models.CharField(max_length=500, default="")
+
+
+    def __str__(self):
+        return self.name
+
+class Orders(models.Model):
+    order_id = models.AutoField(primary_key=True)
+    items_json = models.CharField(max_length=5000)
+    amount = models.IntegerField( default=0)
+    name = models.CharField(max_length=90)
+    email = models.CharField(max_length=111)
+    address = models.CharField(max_length=111)
+    city = models.CharField(max_length=111)
+    state = models.CharField(max_length=111)
+    zip_code = models.CharField(max_length=111)
+    phone = models.CharField(max_length=111, default="")
+
+class OrderUpdate(models.Model):
+    update_id  = models.AutoField(primary_key=True)
+    order_id = models.IntegerField(default="")
+    update_desc = models.CharField(max_length=5000)
+    timestamp = models.DateField(auto_now_add=True)
+
+    def __str__(self):
+        return self.update_desc[0:7] + "..."
+
+#step-3 serializers.py
+from rest_framework import serializers
+from .models import Order
+
+class OrderSerializer(serializers.ModelSerializer):
+    order_date = serializers.DateTimeField(format="%d %B %Y %I:%M %p")
+
+    class Meta:
+        model = Order
+        fields = '__all__'
+        depth = 2
+
+#step-4 urls.py 
+from django.urls import path
+from . import views
+
+urlpatterns = [
+    path("", views.index, name="ShopHome"),
+    path("about/", views.about, name="AboutUs"),
+    path("contact/", views.contact, name="ContactUs"),
+    path("tracker/", views.tracker, name="TrackingStatus"),
+    path("search/", views.search, name="Search"),
+    path("products/<int:myid>", views.productView, name="ProductView"),
+    path("checkout/", views.checkout, name="Checkout"),
+    path("handlerequest/", views.handlerequest, name="HandleRequest"),
+    
+]
+
+#step-5 views.py
+  from django.shortcuts import render
+# Create your views here.
+from django.shortcuts import render
+from .models import Product, Contact, Orders, OrderUpdate
+from math import ceil
+import json
+from django.views.decorators.csrf import csrf_exempt
+import Checksum
+# Create your views here.
+from django.http import HttpResponse
+
+MERCHANT_KEY = 'Your-Merchant-Key-Here'
+
+def index(request):
+    allProds = []
+    catprods = Product.objects.values('category', 'id')
+    cats = {item['category'] for item in catprods}
+    for cat in cats:
+        prod = Product.objects.filter(category=cat)
+        n = len(prod)
+        nSlides = n // 4 + ceil((n / 4) - (n // 4))
+        allProds.append([prod, range(1, nSlides), nSlides])
+    params = {'allProds':allProds}
+    return render(request, 'shop/index.html', params)
+
+
+def about(request):
+    return render(request, 'shop/about.html')
+
+
+def contact(request):
+    thank = False
+    if request.method=="POST":
+        name = request.POST.get('name', '')
+        email = request.POST.get('email', '')
+        phone = request.POST.get('phone', '')
+        desc = request.POST.get('desc', '')
+        contact = Contact(name=name, email=email, phone=phone, desc=desc)
+        contact.save()
+        thank = True
+    return render(request, 'shop/contact.html', {'thank': thank})
+
+
+def tracker(request):
+    if request.method=="POST":
+        orderId = request.POST.get('orderId', '')
+        email = request.POST.get('email', '')
+        try:
+            order = Orders.objects.filter(order_id=orderId, email=email)
+            if len(order)>0:
+                update = OrderUpdate.objects.filter(order_id=orderId)
+                updates = []
+                for item in update:
+                    updates.append({'text': item.update_desc, 'time': item.timestamp})
+                    response = json.dumps([updates, order[0].items_json], default=str)
+                return HttpResponse(response)
+            else:
+                return HttpResponse('{}')
+        except Exception as e:
+            return HttpResponse('{}')
+
+    return render(request, 'shop/tracker.html')
+
+
+def search(request):
+    return render(request, 'shop/search.html')
+
+
+def productView(request, myid):
+
+    # Fetch the product using the id
+    product = Product.objects.filter(id=myid)
+    return render(request, 'shop/prodView.html', {'product':product[0]})
+
+
+def checkout(request):
+    if request.method=="POST":
+        items_json = request.POST.get('itemsJson', '')
+        name = request.POST.get('name', '')
+        amount = request.POST.get('amount', '')
+        email = request.POST.get('email', '')
+        address = request.POST.get('address1', '') + " " + request.POST.get('address2', '')
+        city = request.POST.get('city', '')
+        state = request.POST.get('state', '')
+        zip_code = request.POST.get('zip_code', '')
+        phone = request.POST.get('phone', '')
+        order = Orders(items_json=items_json, name=name, email=email, address=address, city=city,
+                       state=state, zip_code=zip_code, phone=phone, amount=amount)
+        order.save()
+        update = OrderUpdate(order_id=order.order_id, update_desc="The order has been placed")
+        update.save()
+        thank = True
+        id = order.order_id
+        # return render(request, 'shop/checkout.html', {'thank':thank, 'id': id})
+        # Request paytm to transfer the amount to your account after payment by user
+        param_dict = {
+
+                'MID': 'Your-Merchant-Id-Here',
+                'ORDER_ID': str(order.order_id),
+                'TXN_AMOUNT': str(amount),
+                'CUST_ID': email,
+                'INDUSTRY_TYPE_ID': 'Retail',
+                'WEBSITE': 'WEBSTAGING',
+                'CHANNEL_ID': 'WEB',
+                'CALLBACK_URL':'http://127.0.0.1:8000/shop/handlerequest/',
+
+        }
+        param_dict['CHECKSUMHASH'] = Checksum.generate_checksum(param_dict, MERCHANT_KEY)
+        return render(request, 'shop/paytm.html', {'param_dict': param_dict})
+
+    return render(request, 'shop/checkout.html')
+
+
+@csrf_exempt
+def handlerequest(request):
+    # paytm will send you post request here
+    form = request.POST
+    response_dict = {}
+    for i in form.keys():
+        response_dict[i] = form[i]
+        if i == 'CHECKSUMHASH':
+            checksum = form[i]
+
+    verify = Checksum.verify_checksum(response_dict, MERCHANT_KEY, checksum)
+    if verify:
+        if response_dict['RESPCODE'] == '01':
+            print('order successful')
+        else:
+            print('order was not successful because' + response_dict['RESPMSG'])
+    return render(request, 'shop/paymentstatus.html', {'response': response_dict})
+
+  #Step-6 templates/paytm.html
+  <!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Paytm merchant payment page</title>
+</head>
+<body>
+<h1>Redirecting you to the merchant....</h1>
+<h1>Please do not refresh your page....</h1>
+<form action="https://securegw-stage.paytm.in/theia/processTransaction" method="post" name="paytm">
+    {% for key, value in param_dict.items %}
+    <input type="hidden" name="{{key}}" value="{{value}}">
+    {% endfor %}
+
+</form>
+</body>
+<script>
+document.paytm.submit()
+</script>
+</html>
+
+#step-7 templates/paymentstatus.html
+  {% extends 'shop/basic.html' %}
+{% block title%} My Awesome Cart Tracker{% endblock %}
+{% block body %}
+<div class="container">
+    {{response}}
+    <div class="col my-4">
+
+        <h2>Payment status regarding your order Id {{response.ORDERID}}</h2>
+        {% if response.RESPCODE == '01' %}
+        ORDER SUCCESS
+        {% else %}
+        ORDER FAILURE
+        {% endif%}
+
+    </div>
+
+</div>
+{% endblock %}
+{% block js %}
+<script>
+</script>
+{% endblock %}
+
+#step-8 templates/Checkout.html
+  {% extends 'shop/basic.html' %}
+{% block title%} Checkout - My Awesome Cart{% endblock %}
+{% block body %}
+<div class="container">
+    <div class="col my-4">
+        <h2>Step 1 - My Awesome Cart Express Checkout - Review Your Cart Items</h2>
+        <div class="my-4">
+            <ul class="list-group" id="items">
+            </ul>
+
+            <nav aria-label="breadcrumb">
+  <ol class="breadcrumb mt-3">
+    <li class="breadcrumb-item active" aria-current="page">Your Cart Total Is <b>Rs. <span id="totalPrice"></span></b>. Enter your details below & place your order. Thanks for using My Awesome Cart!</li>
+  </ol>
+</nav>
+
+
+
+            
+        </div>
+    </div>
+    <div class="col my-4">
+        <h2>Step 2 - Enter Address & Other Details:</h2>
+        <form method="post" action="/shop/checkout/">{% csrf_token %}
+            <input type="hidden" name="itemsJson" id="itemsJson">
+            <input type="hidden" name="amount" id="amount">
+            <div class="form-row">
+                <div class="form-group col-md-6">
+                    <label for="inputname">Name</label>
+                    <input type="text" class="form-control" id="name" name="name" placeholder="Name">
+                </div>
+                <div class="form-group col-md-6">
+                    <label for="inputEmail4">Email</label>
+                    <input type="email" class="form-control" id="email" name="email" placeholder="Email">
+                </div>
+            </div>
+            <div class="form-group">
+                <label for="inputAddress">Address</label>
+                <input type="text" class="form-control" id="address1" name="address1" placeholder="1234 Main St">
+            </div>
+            <div class="form-group">
+                <label for="inputAddress2">Address line 2</label>
+                <input type="text" class="form-control" id="address2" name="address2" placeholder="Apartment, studio, or floor">
+            </div>
+            <div class="form-row">
+                <div class="form-group col-md-6">
+                    <label for="inputCity">City</label>
+                    <input type="text" class="form-control" id="city" name="city">
+                </div>
+                <div class="form-group col-md-4">
+                    <label for="inputState">State</label>
+                    <input type="text" class="form-control" id="state" name="state"  placeholder="Enter State">
+                </div>
+                <div class="form-group col-md-2">
+                    <label for="inputZip">Zip</label>
+                    <input type="text" class="form-control" id="zip_code" name="zip_code">
+                </div>
+            </div>
+            <div class="form-group">
+                <label for="inputZip">Phone Number</label>
+                <input type="tel" class="form-control" id="phone" name="phone">
+            </div>
+            <button type="submit" class="btn btn-primary">Place Order</button>
+        </form>
+    </div>
+</div>
+{% endblock %}
+{% block js %}
+<script>
+if (localStorage.getItem('cart') == null) {
+    var cart = {};
+} else {
+    cart = JSON.parse(localStorage.getItem('cart'));
+}
+console.log(cart);
+var sum = 0;
+var totalPrice = 0;
+if ($.isEmptyObject(cart)) {
+    //if object is empty
+    mystr = `<p>Your cart is empty, please add some items to your cart before checking out!</p>`
+    $('#items').append(mystr);
+} else {
+    for (item in cart) {
+        let name = cart[item][1];
+        let qty = cart[item][0];
+        let itemPrice = cart[item][2];
+        sum = sum + qty;
+        totalPrice = totalPrice + qty* itemPrice;
+        mystr = `<li class="list-group-item d-flex justify-content-between align-items-center">
+                    ${name}
+                    <span class="badge badge-primary badge-pill">${qty}</span>
+                </li>`
+        $('#items').append(mystr);
+    }
+}
+document.getElementById('cart').innerHTML = sum;
+document.getElementById('totalPrice').innerHTML = totalPrice;
+$('#itemsJson').val(JSON.stringify(cart));
+{% if thank %}
+alert('Thanks for ordering with us. Your order is is {{id}}. Use it to track your order using our order tracker');
+localStorage.clear();
+document.location = "/shop";
+{% endif %}
+$('#amount').val($('#totalPrice').html())
+</script>
+{% endblock %}
