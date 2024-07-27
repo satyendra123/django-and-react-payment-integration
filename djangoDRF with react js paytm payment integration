@@ -397,3 +397,85 @@ const App = () => {
 };
 
 export default App;
+
+#Step-8 react js code for fronted
+import React, { useState } from 'react';
+import axios from 'axios';
+
+const PaymentForm = () => {
+  const [amount, setAmount] = useState('');
+  const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
+
+  const handleSubmit = async (event) => {
+    event.preventDefault();
+
+    try {
+      // Send payment details to Django backend
+      const response = await axios.post('http://127.0.0.1:8000/api/pay/', {
+        amount,
+        name,
+        email,
+      });
+
+      // Extract the parameters from the response
+      const { param_dict } = response.data;
+
+      // Redirect the user to Paytm with the payment parameters
+      const form = document.createElement('form');
+      form.setAttribute('method', 'POST');
+      form.setAttribute('action', 'https://securegw-stage.paytm.in/theia/processTransaction');
+
+      for (const key in param_dict) {
+        const input = document.createElement('input');
+        input.setAttribute('type', 'hidden');
+        input.setAttribute('name', key);
+        input.setAttribute('value', param_dict[key]);
+        form.appendChild(input);
+      }
+
+      document.body.appendChild(form);
+      form.submit();
+    } catch (error) {
+      console.error('Error during payment process:', error);
+    }
+  };
+
+  return (
+    <form onSubmit={handleSubmit}>
+      <div>
+        <label>
+          Amount:
+          <input
+            type="text"
+            value={amount}
+            onChange={(e) => setAmount(e.target.value)}
+          />
+        </label>
+      </div>
+      <div>
+        <label>
+          Name:
+          <input
+            type="text"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+          />
+        </label>
+      </div>
+      <div>
+        <label>
+          Email:
+          <input
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+          />
+        </label>
+      </div>
+      <button type="submit">Pay Now</button>
+    </form>
+  );
+};
+
+export default PaymentForm;
